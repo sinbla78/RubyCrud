@@ -1,3 +1,9 @@
+# Gemfile
+# gem 'sinatra'
+# gem 'json'
+
+require 'sinatra'
+require 'json'
 require_relative '../models/user'
 
 class UserManager
@@ -6,44 +12,37 @@ class UserManager
     @next_id = 1
   end
   
-  # Create - 새 사용자 생성
+  # Create - 새 사용자 생성 (API 버전)
   def create_user(name, email, age)
     user = User.new(@next_id, name, email, age)
     
     unless user.valid?
-      puts "❌ 유효하지 않은 사용자 정보입니다."
-      return nil
+      return { success: false, error: "유효하지 않은 사용자 정보입니다.", data: nil }
     end
     
     @users << user
     @next_id += 1
-    puts "✅ 사용자가 성공적으로 생성되었습니다: #{user}"
-    user
+    { success: true, message: "사용자가 성공적으로 생성되었습니다.", data: user.to_hash }
   end
   
-  # Read - 모든 사용자 조회
+  # Read - 모든 사용자 조회 (API 버전)
   def read_all_users
-    if @users.empty?
-      puts "📋 등록된 사용자가 없습니다."
-      return []
-    end
-    
-    puts "📋 모든 사용자 목록:"
-    puts "-" * 50
-    @users.each { |user| puts user }
-    puts "-" * 50
-    @users
+    {
+      success: true,
+      message: "모든 사용자 조회 완료",
+      count: @users.length,
+      data: @users.map(&:to_hash)
+    }
   end
   
   # Read - 특정 사용자 조회 (ID로)
   def read_user_by_id(id)
     user = @users.find { |u| u.id == id }
     if user
-      puts "🔍 사용자 찾음: #{user}"
+      { success: true, message: "사용자를 찾았습니다.", data: user.to_hash }
     else
-      puts "❌ ID #{id}인 사용자를 찾을 수 없습니다."
+      { success: false, error: "ID #{id}인 사용자를 찾을 수 없습니다.", data: nil }
     end
-    user
   end
   
   # Update - 사용자 정보 수정
@@ -51,8 +50,7 @@ class UserManager
     user = @users.find { |u| u.id == id }
     
     if user.nil?
-      puts "❌ ID #{id}인 사용자를 찾을 수 없습니다."
-      return nil
+      return { success: false, error: "ID #{id}인 사용자를 찾을 수 없습니다.", data: nil }
     end
     
     user.name = name if name
@@ -60,12 +58,10 @@ class UserManager
     user.age = age if age
     
     unless user.valid?
-      puts "❌ 수정된 정보가 유효하지 않습니다."
-      return nil
+      return { success: false, error: "수정된 정보가 유효하지 않습니다.", data: nil }
     end
     
-    puts "✅ 사용자 정보가 수정되었습니다: #{user}"
-    user
+    { success: true, message: "사용자 정보가 수정되었습니다.", data: user.to_hash }
   end
   
   # Delete - 사용자 삭제
@@ -73,27 +69,23 @@ class UserManager
     user_index = @users.find_index { |u| u.id == id }
     
     if user_index.nil?
-      puts "❌ ID #{id}인 사용자를 찾을 수 없습니다."
-      return false
+      return { success: false, error: "ID #{id}인 사용자를 찾을 수 없습니다.", data: nil }
     end
     
     deleted_user = @users.delete_at(user_index)
-    puts "🗑️ 사용자가 삭제되었습니다: #{deleted_user}"
-    true
+    { success: true, message: "사용자가 삭제되었습니다.", data: deleted_user.to_hash }
   end
   
   # 검색 기능 - 이름으로 사용자 찾기
   def search_users_by_name(name)
     found_users = @users.select { |u| u.name.downcase.include?(name.downcase) }
     
-    if found_users.empty?
-      puts "🔍 '#{name}'과 일치하는 사용자를 찾을 수 없습니다."
-    else
-      puts "🔍 '#{name}'으로 검색된 사용자들:"
-      found_users.each { |user| puts user }
-    end
-    
-    found_users
+    {
+      success: true,
+      message: "'#{name}'으로 검색 완료",
+      count: found_users.length,
+      data: found_users.map(&:to_hash)
+    }
   end
   
   # 통계 정보
@@ -101,20 +93,175 @@ class UserManager
     total_users = @users.length
     avg_age = total_users > 0 ? @users.sum(&:age) / total_users.to_f : 0
     
-    puts "📊 사용자 통계:"
-    puts "전체 사용자 수: #{total_users}"
-    puts "평균 나이: #{'%.1f' % avg_age}세"
-    
-    { total: total_users, average_age: avg_age }
-  end
-  
-  # 데이터 내보내기
-  def export_users
-    @users.map(&:to_hash)
+    {
+      success: true,
+      message: "통계 조회 완료",
+      data: {
+        total_users: total_users,
+        average_age: avg_age.round(1)
+      }
+    }
   end
   
   # 사용자 존재 여부 확인
   def user_exists?(id)
     @users.any? { |u| u.id == id }
   end
+end
+
+# Sinatra API 애플리케이션
+class UserAPI < Sinatra::Base
+  
+  def initialize
+    super
+    @user_manager = UserManager.new
+    
+    # 테스트용 더미 데이터 추가
+    @user_manager.create_user("홍길동", "hong@example.com", 25)
+    @user_manager.create_user("김영희", "kim@example.com", 30)
+  end
+  
+  # CORS 설정 (프론트엔드와 연동할 때 필요)
+  before do
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    content_type :json
+  end
+  
+  # OPTIONS 요청 처리 (CORS preflight)
+  options '*' do
+    200
+  end
+  
+  # 에러 핸들링
+  error do
+    status 500
+    { success: false, error: "서버 내부 오류가 발생했습니다." }.to_json
+  end
+  
+  # GET /users - 모든 사용자 조회
+  get '/users' do
+    result = @user_manager.read_all_users
+    status 200
+    result.to_json
+  end
+  
+  # GET /users/:id - 특정 사용자 조회
+  get '/users/:id' do
+    id = params[:id].to_i
+    result = @user_manager.read_user_by_id(id)
+    
+    if result[:success]
+      status 200
+    else
+      status 404
+    end
+    
+    result.to_json
+  end
+  
+  # POST /users - 새 사용자 생성
+  post '/users' do
+    begin
+      # JSON 파싱
+      request_payload = JSON.parse(request.body.read)
+      name = request_payload['name']
+      email = request_payload['email']
+      age = request_payload['age']
+      
+      result = @user_manager.create_user(name, email, age)
+      
+      if result[:success]
+        status 201  # Created
+      else
+        status 400  # Bad Request
+      end
+      
+      result.to_json
+      
+    rescue JSON::ParserError
+      status 400
+      { success: false, error: "잘못된 JSON 형식입니다." }.to_json
+    end
+  end
+  
+  # PUT /users/:id - 사용자 정보 수정
+  put '/users/:id' do
+    begin
+      id = params[:id].to_i
+      request_payload = JSON.parse(request.body.read)
+      
+      result = @user_manager.update_user(
+        id,
+        name: request_payload['name'],
+        email: request_payload['email'],
+        age: request_payload['age']
+      )
+      
+      if result[:success]
+        status 200
+      else
+        status 404
+      end
+      
+      result.to_json
+      
+    rescue JSON::ParserError
+      status 400
+      { success: false, error: "잘못된 JSON 형식입니다." }.to_json
+    end
+  end
+  
+  # DELETE /users/:id - 사용자 삭제
+  delete '/users/:id' do
+    id = params[:id].to_i
+    result = @user_manager.delete_user(id)
+    
+    if result[:success]
+      status 200
+    else
+      status 404
+    end
+    
+    result.to_json
+  end
+  
+  # GET /users/search/:name - 이름으로 사용자 검색
+  get '/users/search/:name' do
+    name = params[:name]
+    result = @user_manager.search_users_by_name(name)
+    status 200
+    result.to_json
+  end
+  
+  # GET /stats - 사용자 통계
+  get '/stats' do
+    result = @user_manager.get_stats
+    status 200
+    result.to_json
+  end
+  
+  # GET / - API 정보
+  get '/' do
+    {
+      success: true,
+      message: "User Management API",
+      version: "1.0.0",
+      endpoints: {
+        "GET /users" => "모든 사용자 조회",
+        "GET /users/:id" => "특정 사용자 조회",
+        "POST /users" => "새 사용자 생성",
+        "PUT /users/:id" => "사용자 정보 수정",
+        "DELETE /users/:id" => "사용자 삭제",
+        "GET /users/search/:name" => "이름으로 사용자 검색",
+        "GET /stats" => "사용자 통계"
+      }
+    }.to_json
+  end
+end
+
+# 애플리케이션 실행
+if __FILE__ == $0
+  UserAPI.run! host: 'localhost', port: 4567
 end
